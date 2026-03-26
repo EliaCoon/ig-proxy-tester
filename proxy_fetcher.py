@@ -245,35 +245,66 @@ def load_existing() -> list[str]:
 # Entry point
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run(test_only: bool = False, resume: bool = False) -> None:
+def run(test_only: bool = False, fresh: bool = False) -> None:
+    """
+    Default behaviour (no flags):
+      1. Re-validate existing proxies in proxies.txt — keep the ones still working.
+      2. Fetch new proxies from all sources, skip any already known.
+      3. Test new candidates and merge with survivors from step 1.
+
+    --test-only : only re-validate existing proxies, skip fetching new ones.
+    --fresh     : ignore existing proxies entirely, start from scratch.
+    """
+    survivors: list[str] = []
+
+    # ── Step 1: re-validate existing proxies ──────────────────────────────────
+    existing = load_existing()
+    if existing and not fresh:
+        console.rule("[bold]Re-validating existing proxies[/bold]")
+        console.print(f"[dim]Checking {len(existing)} proxies already in proxies.txt...[/dim]")
+        survivors = test_proxies(existing)
+        console.print(
+            f"[cyan]{len(survivors)}/{len(existing)} existing proxies still working[/cyan]"
+        )
+    elif fresh:
+        console.print("[dim]--fresh: ignoring existing proxies.txt[/dim]")
+
     if test_only:
-        console.print("[cyan]Test-only mode — using existing proxies.txt[/cyan]")
-        candidates = load_existing()
-        if not candidates:
+        if not existing:
             console.print("[yellow]No proxies found in proxies.txt[/yellow]")
             return
-    else:
-        console.rule("[bold]Fetching proxies from all sources[/bold]")
-        all_candidates = fetch_all_sources()
-        console.print(f"[cyan]{len(all_candidates)} unique proxies collected[/cyan]")
-
-        if resume:
-            already_done = set(load_existing())
-            candidates = [p for p in all_candidates if p not in already_done]
-            console.print(f"[dim]Resuming: {len(already_done)} already tested, {len(candidates)} remaining[/dim]")
-        else:
-            candidates = all_candidates
-
-    if not candidates:
-        console.print("[red]No proxies to test.[/red]")
+        _finish(survivors, len(existing))
         return
 
-    console.rule("[bold]Testing against Instagram[/bold]")
-    console.print(f"[dim]{MAX_WORKERS} parallel threads — {_TEST_TIMEOUT}s timeout per proxy — randomised order[/dim]")
-    working = test_proxies(candidates)
+    # ── Step 2: fetch new proxies from all sources ────────────────────────────
+    console.rule("[bold]Fetching proxies from all sources[/bold]")
+    all_fetched = fetch_all_sources()
+    known = set(existing)
+    new_candidates = [p for p in all_fetched if p not in known]
+    console.print(
+        f"[cyan]{len(all_fetched)} unique proxies collected — "
+        f"{len(new_candidates)} new (not in proxies.txt)[/cyan]"
+    )
 
-    console.print(f"\n[bold green]{len(working)} working proxies[/bold green] out of {len(candidates)} tested")
+    if not new_candidates:
+        console.print("[yellow]No new proxies to test.[/yellow]")
+        _finish(survivors, 0)
+        return
 
+    # ── Step 3: test new candidates ───────────────────────────────────────────
+    console.rule("[bold]Testing new proxies against Instagram[/bold]")
+    console.print(f"[dim]{MAX_WORKERS} parallel threads — {_TEST_TIMEOUT}s timeout — randomised order[/dim]")
+    new_working = test_proxies(new_candidates)
+    console.print(
+        f"[cyan]{len(new_working)} new working proxies[/cyan] out of {len(new_candidates)} tested"
+    )
+
+    _finish(survivors + new_working, len(new_candidates))
+
+
+def _finish(working: list[str], tested: int) -> None:
+    """Print summary and save."""
+    console.print(f"\n[bold green]{len(working)} working proxies total[/bold green]")
     if working:
         save_proxies(working)
         sample = random.sample(working, min(5, len(working)))
@@ -281,11 +312,11 @@ def run(test_only: bool = False, resume: bool = False) -> None:
         for p in sample:
             console.print(f"  [dim]{p}[/dim]")
     else:
-        console.print("[yellow]No proxies passed the Instagram test.[/yellow]")
+        console.print("[yellow]No working proxies found.[/yellow]")
         console.print("[dim]Tip: free datacenter proxies are often blocked. Consider residential proxies (Webshare, BrightData).[/dim]")
 
 
 if __name__ == "__main__":
     test_only = "--test-only" in sys.argv
-    resume    = "--resume" in sys.argv
-    run(test_only=test_only, resume=resume)
+    fresh     = "--fresh"     in sys.argv
+    run(test_only=test_only, fresh=fresh)

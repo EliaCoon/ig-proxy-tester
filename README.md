@@ -4,12 +4,15 @@ Collects free proxies from 40+ public sources and tests each one against the rea
 
 ## How it works
 
-1. **Fetch** — downloads proxy lists from 40+ GitHub repos and public APIs in parallel (async HTTP)
-2. **Test** — sends a real request to `i.instagram.com/api/v1/users/web_profile_info/` through each proxy
+Each run has three steps:
+
+1. **Re-validate** — re-tests any proxies already in `proxies.txt`, keeps the ones still working
+2. **Fetch** — downloads proxy lists from 40+ GitHub repos and public APIs in parallel (async HTTP), skips proxies already known
+3. **Test** — sends a real request to `i.instagram.com/api/v1/users/web_profile_info/` through each new proxy
    - ✅ HTTP 200/404 → working
    - ❌ HTTP 429 → already rate-limited, rejected
    - ❌ timeout / error → dead, rejected
-3. **Save** — writes working proxies to `proxies.txt`, shuffled
+4. **Save** — merges survivors from step 1 with new working proxies, shuffled
 
 The test list is **randomised before testing**, so concurrent users get different results and don't all hammer the same proxies at the same time.
 
@@ -22,14 +25,14 @@ pip install httpx rich
 ## Usage
 
 ```bash
-# Fetch all sources, test everything, save working proxies
+# Default: re-validate existing proxies, then fetch and test new ones
 python proxy_fetcher.py
 
-# Re-test proxies already in proxies.txt
+# Only re-test proxies already in proxies.txt (no fetching)
 python proxy_fetcher.py --test-only
 
-# Resume a previous run (skip already-tested proxies)
-python proxy_fetcher.py --resume
+# Ignore existing proxies.txt and start completely fresh
+python proxy_fetcher.py --fresh
 ```
 
 ## Output
